@@ -296,7 +296,10 @@ REST_FRAMEWORK = {
     'FILTER_BACKEND': 'greenmine.base.filters.FilterBackend',
     'PAGINATE_BY': 50,
     'MAX_PAGINATE_BY': 1000,
+    'VIEW_DESCRIPTION_FUNCTION': 'rest_framework_apidoc.apidoc.get_view_description',
 }
+APIDOC_DEFAULT_DOCUMENTER_CLASSES = ['rest_framework_apidoc.apidoc.RSTFilesDocumenter']
+APIDOC_DOCUMENTATION_PATH = "greenmine/apidoc"
 
 from .appdefaults import *
 

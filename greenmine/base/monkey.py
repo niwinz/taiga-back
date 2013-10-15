@@ -22,6 +22,10 @@ def patch_api_view():
                                 exception=True)
             return super(APIView, self).handle_exception(exc)
 
+        def get_view_description(self, html=False):
+            func = self.settings.VIEW_DESCRIPTION_FUNCTION
+            return func(self.__class__, html, self.request)
+
         @classmethod
         def as_view(cls, **initkwargs):
             view = super(views._APIView, cls).as_view(**initkwargs)
