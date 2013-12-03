@@ -1,8 +1,44 @@
-<p>Updated fields by {{ changer }}:</p>
-<ul>
-{% for field in changed_fields_dict.values() %}
-    <li><b>{{ field.verbose_name}}</b>: from "{{ field.old_value}}" to "{{ field.new_value}}".</li>
-{% endfor %}
-</ul>
-{# TODO Print the "object" details #}
+{% extends "emails/base.jinja" %}
 
+{% set final_url = resolve_front_url("task", object.project.id, object.id) %}
+{% set final_url_name = "Greenmine - View task #{0}".format(object.ref) %}
+
+{% block body %}
+<table border="0" width="100%" cellpadding="0" cellspacing="0" class="table-body">
+    <tr>
+        <td>
+            <h1>Project: {{ object.project.name }}</h1>
+            <h2>Task #{{ object.ref }}: {{ object.subject }}</h2>
+            <p>Updated by <b>{{ changer.get_full_name() }}</b>.</p>
+        {% if comment %}
+            <p>Comment <b>{{ comment|linebreaksbr }}</b></p>
+        {% endif %}
+        {% if changed_fields %}
+            <p>Updated fields:
+            <dl>
+            {% for field in changed_fields %}
+                <dt style="background: #669933; padding: 5px 15px; color: #fff">
+                    <b>{{ field.verbose_name}}</b>
+                </dt>
+                {% if field.new_value %}
+                <dd style="background: #eee; padding: 5px 15px; color: #444">
+                    <b>to:</b> <i>{{ field.new_value|linebreaksbr }}</i>
+                </dd>
+                {% endif %}
+                {% if field.old_value %}
+                <dd style="padding: 5px 15px; color: #bbb">
+                    <b>from:</b> <i>{{ field.old_value|linebreaksbr }}</i>
+                </dd>
+                {% endif %}
+            {% endfor %}
+            </dl>
+        {% endif %}
+        </td>
+    </tr>
+</table>
+{% endblock %}
+{% block footer %}
+<p style="padding: 10px; border-top: 1px solid #eee;">
+    More info at: <a href="{{ final_url }}" style="color: #666;">{{ final_url_name }}</a>
+</p>
+{% endblock %}

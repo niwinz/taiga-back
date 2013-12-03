@@ -15,11 +15,13 @@ OUT_PROJECT_ROOT = os.path.abspath(
     os.path.join(PROJECT_ROOT, "..")
 )
 
+USE_X_FORWARDED_HOST = True
+
 APPEND_SLASH = False
 
 
 ADMINS = (
-    ('Andrei Antoukh', 'niwi@niwi.be'),
+    ('Admin', 'example@example.com'),
 )
 
 LANGUAGES = (
@@ -64,6 +66,11 @@ SITES = {
     1: {"domain": "localhost:8000", "scheme": "http"},
 }
 
+SITES_FRONT = {
+    1: {"domain": "localhost:9001", "scheme": "http"},
+}
+
+
 SITE_ID = 1
 
 #SESSION BACKEND
@@ -83,7 +90,7 @@ HOST = 'http://localhost:8000'
 #EMAIL_HOST_USER = 'user'
 #EMAIL_HOST_PASSWORD = 'password'
 #EMAIL_PORT = 25
-DEFAULT_FROM_EMAIL = "niwi@niwi.be"
+DEFAULT_FROM_EMAIL = "john@doe.com"
 EMAIL_BACKEND = 'djmail.backends.default.EmailBackend'
 #EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'
 #EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
@@ -146,18 +153,17 @@ TEMPLATE_LOADERS = [
 ]
 
 MIDDLEWARE_CLASSES = [
+    'greenmine.base.middleware.CoorsMiddleware',
+    'greenmine.base.middleware.SitesMiddleware',
+
     # Common middlewares
     'django.middleware.common.CommonMiddleware',
     'django.middleware.locale.LocaleMiddleware',
-    'greenmine.base.middleware.CoorsMiddleware',
-    'reversion.middleware.RevisionMiddleware',
 
     # Only needed by django admin
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
-
-    # 'greenmine.base.middleware.GreenmineSessionMiddleware',
 ]
 
 TEMPLATE_CONTEXT_PROCESSORS = [
@@ -178,9 +184,6 @@ TEMPLATE_DIRS = [
 ]
 
 INSTALLED_APPS = [
-    # 'grappelli.dashboard',
-    # 'grappelli',
-
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -188,16 +191,16 @@ INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.staticfiles',
 
-    'greenmine.base',
-    'greenmine.base.notifications',
     'greenmine.base.users',
-    'greenmine.base.mail',
+    'greenmine.base.notifications',
     'greenmine.base.searches',
+    'greenmine.base',
     'greenmine.projects',
     'greenmine.projects.milestones',
     'greenmine.projects.userstories',
     'greenmine.projects.tasks',
     'greenmine.projects.issues',
+    'greenmine.front',
     #'greenmine.projects.questions',
     #'greenmine.projects.documents',
     'greenmine.projects.wiki',
@@ -206,7 +209,6 @@ INSTALLED_APPS = [
     'reversion',
     'rest_framework',
     'djmail',
-    'django_sites',
 ]
 
 WSGI_APPLICATION = 'greenmine.wsgi.application'
@@ -220,8 +222,11 @@ LOGGING = {
         }
     },
     'formatters': {
-        'simple': {
+        'complete': {
             'format': '%(levelname)s:%(asctime)s:%(module)s %(message)s'
+        },
+        'simple': {
+            'format': '%(levelname)s:%(asctime)s: %(message)s'
         },
         'null': {
             'format': '%(message)s',
@@ -235,7 +240,7 @@ LOGGING = {
         'console':{
             'level':'DEBUG',
             'class':'logging.StreamHandler',
-            'formatter': 'null',
+            'formatter': 'simple',
         },
         'mail_admins': {
             'level': 'ERROR',
@@ -254,11 +259,16 @@ LOGGING = {
             'level': 'ERROR',
             'propagate': False,
         },
-        'main': {
+        'greenmine': {
             'handlers': ['console'],
             'level': 'DEBUG',
             'propagate': False,
-        }
+        },
+        'greenmine.site': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
     }
 }
 
@@ -287,11 +297,10 @@ REST_FRAMEWORK = {
         'greenmine.base.auth.Session',
     ),
     'FILTER_BACKEND': 'greenmine.base.filters.FilterBackend',
-    'PAGINATE_BY': 50,
+    'EXCEPTION_HANDLER': 'greenmine.base.exceptions.exception_handler',
+    'PAGINATE_BY': 30,
     'MAX_PAGINATE_BY': 1000,
 }
-
-from .appdefaults import *
 
 
 # NOTE: DON'T INSERT MORE SETTINGS AFTER THIS LINE

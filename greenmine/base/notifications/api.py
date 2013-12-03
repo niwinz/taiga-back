@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-i
+# -*- coding: utf-8 -*-
 
 from djmail import template_mail
 
@@ -15,16 +15,22 @@ class NotificationSenderMixin(object):
             email.send()
 
     def post_save(self, obj, created=False):
+        super().post_save(obj, created)
+
         users = obj.get_watchers_to_notify(self.request.user)
-        context = {'changer': self.request.user, 'object': obj}
+        comment = self.request.DATA.get("comment", None)
+        context = {'changer': self.request.user, "comment": comment, 'object': obj}
 
         if created:
             self._send_notification_email(self.create_notification_template,
                                           users=users, context=context)
         else:
-            context["changed_fields_dict"] = obj.get_changed_fields_dict(self.request.DATA)
-            self._send_notification_email(self.update_notification_template,
-                                          users=users, context=context)
+            changed_fields = obj.get_changed_fields_list(self.request.DATA)
+
+            if changed_fields:
+                context["changed_fields"] = changed_fields
+                self._send_notification_email(self.update_notification_template,
+                                              users=users, context=context)
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
@@ -34,4 +40,4 @@ class NotificationSenderMixin(object):
         self._send_notification_email(self.destroy_notification_template,
                                       users=users, context=context)
 
-        return super(NotificationSenderMixin, self).destroy(request, *args, **kwargs)
+        return super().destroy(request, *args, **kwargs)

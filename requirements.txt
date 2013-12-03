@@ -1,13 +1,11 @@
-# We use Django 1.6,
-#git+https://github.com/django/django.git@stable/1.6.x
-https://www.djangoproject.com/download/1.6c1/tarball/
 git+https://github.com/tomchristie/django-rest-framework.git@2.4.0
 git+https://github.com/etianen/django-reversion.git@django-1.6
 
-South==0.8.2
+Django==1.6.0
+South==0.8.3
 anyjson==0.3.3
 Werkzeug==0.9.4
-celery==3.0.23
+celery==3.0.24
 django-celery==3.0.23
 django-filter==0.7
 django-grappelli==2.4.6
@@ -17,8 +15,7 @@ gunicorn>=17.5
 psycopg2==2.5.1
 pytz>=2013d
 six>=1.4.1
-djmail>=0.3
+djmail>=0.4
 django-jinja>=0.21
 jinja2==2.7.1
 pygments>=1.6
-django-sites>=0.4

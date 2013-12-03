@@ -84,11 +84,17 @@ class Command(BaseCommand):
             project = self.create_project(x)
 
             # added memberships
+            computable_project_roles = set()
             for user in self.users:
+                role = self.sd.db_object_from_queryset(Role.objects.all())
+
                 Membership.objects.create(
                         project=project,
-                        role=self.sd.db_object_from_queryset(Role.objects.all()),
+                        role=role,
                         user=user)
+
+                if role.computable:
+                    computable_project_roles.add(role)
 
             start_date = now() - datetime.timedelta(55)
 
@@ -99,7 +105,7 @@ class Command(BaseCommand):
 
                 # create uss asociated to milestones
                 for z in range(self.sd.int(3, 7)):
-                    us = self.create_us(project, milestone)
+                    us = self.create_us(project, milestone, computable_project_roles)
 
                     # create tasks
                     rang = (1, 4) if start_date <= now() and end_date <= now() else (0, 6)
@@ -118,7 +124,7 @@ class Command(BaseCommand):
 
             # created unassociated uss.
             for y in range(self.sd.int(8,15)):
-                us = self.create_us(project)
+                us = self.create_us(project, None, computable_project_roles)
 
             # create bugs.
             for y in range(self.sd.int(15,25)):
@@ -137,7 +143,8 @@ class Command(BaseCommand):
                 content_type=ContentType.objects.get_for_model(object.__class__),
                 content_object=object,
                 object_id=object.id,
-                owner=object.project.owner,
+                owner=self.sd.db_object_from_queryset(
+                          object.project.memberships.all()).user,
                 attached_file=self.sd.image_from_directory(*ATTACHMENT_SAMPLE_DATA))
 
         return attachment
@@ -147,7 +154,7 @@ class Command(BaseCommand):
                 project=project,
                 slug=slug,
                 content=self.sd.paragraphs(3,15),
-                owner=project.owner)
+                owner=self.sd.db_object_from_queryset(project.memberships.all()).user)
 
         for i in range(self.sd.int(0, 4)):
             attachment = self.create_attachment(wiki_page)
@@ -159,7 +166,7 @@ class Command(BaseCommand):
     #            project=project,
     #            subject=self.sd.choice(SUBJECT_CHOICES),
     #            content=self.sd.paragraph(),
-    #            owner=project.owner,
+    #            owner=self.sd.db_object_from_queryset(project.memberships.all()).user,
     #            status=self.sd.db_object_from_queryset(project.question_status.all()),
     #            tags=self.sd.words(1,5).split(" "))
     #
@@ -173,7 +180,7 @@ class Command(BaseCommand):
                 project=project,
                 subject=self.sd.choice(SUBJECT_CHOICES),
                 description=self.sd.paragraph(),
-                owner=project.owner,
+                owner=self.sd.db_object_from_queryset(project.memberships.all()).user,
                 severity=self.sd.db_object_from_queryset(Severity.objects.filter(
                                                                   project=project)),
                 status=self.sd.db_object_from_queryset(IssueStatus.objects.filter(
@@ -187,6 +194,10 @@ class Command(BaseCommand):
         for i in range(self.sd.int(0, 4)):
             attachment = self.create_attachment(bug)
 
+        if bug.status.order != 1:
+            bug.assigned_to = self.sd.db_object_from_queryset(project.memberships.all()).user
+            bug.save()
+
         return bug
 
     def create_task(self, project, milestone, us, min_date, max_date, closed=False):
@@ -194,12 +205,11 @@ class Command(BaseCommand):
                 subject=self.sd.choice(SUBJECT_CHOICES),
                 description=self.sd.paragraph(),
                 project=project,
-                owner=self.sd.choice(self.users),
+                owner=self.sd.db_object_from_queryset(project.memberships.all()).user,
                 milestone=milestone,
                 user_story=us,
                 finished_date=None,
-                assigned_to = self.sd.db_object_from_queryset(
-                                     project.memberships.all()).user)
+                assigned_to = self.sd.db_object_from_queryset(project.memberships.all()).user)
 
         if closed:
             task.status = project.task_statuses.get(order=4)
@@ -216,11 +226,11 @@ class Command(BaseCommand):
 
         return task
 
-    def create_us(self, project, milestone=None):
+    def create_us(self, project, milestone=None, computable_project_roles=list(Role.objects.all())):
         us = UserStory.objects.create(
                 subject=self.sd.choice(SUBJECT_CHOICES),
                 project=project,
-                owner=self.sd.choice(self.users),
+                owner=self.sd.db_object_from_queryset(project.memberships.all()).user,
                 description=self.sd.paragraph(),
                 milestone=milestone,
                 status=self.sd.db_object_from_queryset(project.us_statuses.filter(
@@ -228,7 +238,7 @@ class Command(BaseCommand):
                 tags=self.sd.words(1, 3).split(" ")
         )
 
-        for role_points in us.role_points.all():
+        for role_points in us.role_points.filter(role__in=computable_project_roles):
             if milestone:
                 role_points.points = self.sd.db_object_from_queryset(
                                 us.project.points.exclude(value=None))
@@ -249,7 +259,7 @@ class Command(BaseCommand):
                 name='Sprint {0}-{1}-{2}'.format(start_date.year,
                                                  start_date.month,
                                                  start_date.day),
-                owner=project.owner,
+                owner=self.sd.db_object_from_queryset(project.memberships.all()).user,
                 created_date=start_date,
                 modified_date=start_date,
                 estimated_start=start_date,
@@ -264,7 +274,7 @@ class Command(BaseCommand):
                 description='Project example {0} description'.format(counter),
                 owner=random.choice(self.users),
                 public=True,
-                total_story_points=self.sd.int(100, 150),
+                total_story_points=self.sd.int(600, 3000),
                 total_milestones=self.sd.int(5,10))
 
         return project

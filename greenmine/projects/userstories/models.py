@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from django.db import models
+from django.contrib.contenttypes import generic
 from django.conf import settings
 from django.dispatch import receiver
 from django.utils.translation import ugettext_lazy as _
@@ -25,19 +26,23 @@ class RolePoints(models.Model):
                                verbose_name=_("points"))
 
     class Meta:
+        verbose_name = "role points"
+        verbose_name_plural = "role points"
         unique_together = ("user_story", "role")
-        verbose_name = "Role Point"
-        verbose_name_plural = "Role Points"
+        ordering = ["user_story", "role"]
+        permissions = (
+            ("view_rolepoints", "Can view role points"),
+        )
+    def __str__(self):
+        return "{}: {}".format(self.role.name, self.points.name)
 
 
-class UserStory(WatchedMixin, models.Model):
-    uuid = models.CharField(max_length=40, unique=True, null=False, blank=True,
-                            verbose_name=_("uuid"))
+class UserStory(WatchedMixin):
     ref = models.BigIntegerField(db_index=True, null=True, blank=True, default=None,
                                  verbose_name=_("ref"))
-    milestone = models.ForeignKey("milestones.Milestone", null=True, blank=True, default=None,
-                                  related_name="user_stories", verbose_name=_("milestone"),
-                                  on_delete=models.SET_NULL)
+    milestone = models.ForeignKey("milestones.Milestone", null=True, blank=True,
+                                  default=None, related_name="user_stories",
+                                  on_delete=models.SET_NULL, verbose_name=_("milestone"))
     project = models.ForeignKey("projects.Project", null=False, blank=False,
                                 related_name="user_stories", verbose_name=_("project"))
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
@@ -68,37 +73,35 @@ class UserStory(WatchedMixin, models.Model):
                                            verbose_name=_("is team requirement"))
     tags = PickledObjectField(null=False, blank=True,
                               verbose_name=_("tags"))
+    attachments = generic.GenericRelation("projects.Attachment")
 
     notifiable_fields = [
+        "subject",
         "milestone",
         "owner",
-        "status",
-        "points",
         "finish_date",
-        "subject",
-        "description",
         "client_requirement",
         "team_requirement",
+        "status",
+        "points",
         "tags",
+        "description",
     ]
 
     class Meta:
-        verbose_name = u"user story"
-        verbose_name_plural = u"user stories"
+        verbose_name = "user story"
+        verbose_name_plural = "user stories"
         ordering = ["project", "order"]
         unique_together = ("ref", "project")
         permissions = (
-            ("comment_userstory", "Can comment user stories"),
-            ("view_userstory", "Can view user stories"),
-            ("change_owned_userstory", "Can modify owned user stories"),
-            ("add_userstory_to_milestones", "Can add user stories to milestones"),
+            ("view_userstory", "Can view user story"),
         )
 
     def __str__(self):
-        return u"({1}) {0}".format(self.ref, self.subject)
+        return "({1}) {0}".format(self.ref, self.subject)
 
     def __repr__(self):
-        return u"<UserStory %s>" % (self.id)
+        return "<UserStory %s>" % (self.id)
 
     @property
     def is_closed(self):
@@ -114,6 +117,18 @@ class UserStory(WatchedMixin, models.Model):
                 total += rp.points.value
 
         return total
+
+    def get_notifiable_tags_display(self, value):
+        if type(value) is list:
+            return ", ".join(value)
+        return value
+
+    def get_notifiable_points_display(self, value):
+        if isinstance(value, models.manager.Manager):
+            return ", ".join(["{}: {}".format(rp.role.name,rp.points.name)
+                              for rp in self.role_points.all().order_by("role")])
+
+        return None
 
     def _get_watchers_by_role(self):
         return {
@@ -134,6 +149,19 @@ def us_ref_handler(sender, instance, **kwargs):
         instance.ref = ref_uniquely(instance.project, "last_us_ref", instance.__class__)
 
 
-@receiver(models.signals.post_save, sender=UserStory, dispatch_uid="user_story_create_role_points_handler")
+@receiver(models.signals.post_save, sender=UserStory,
+          dispatch_uid="user_story_create_role_points_handler")
 def us_create_role_points_handler(sender, instance, **kwargs):
     instance.project.update_role_points()
+
+
+@receiver(models.signals.post_save, sender=UserStory,
+          dispatch_uid="user_story_tasks_reassignation")
+def us_task_reassignation(sender, instance, created, **kwargs):
+    if not created:
+        instance.tasks.update(milestone=instance.milestone)
+
+@receiver(models.signals.pre_save, sender=UserStory, dispatch_uid="us-tags-normalization")
+def us_tags_normalization(sender, instance, **kwargs):
+    if isinstance(instance.tags, (list, tuple)):
+        instance.tags = list(map(lambda x: x.lower(), instance.tags))

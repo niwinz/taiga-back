@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from django.db import models
+from django.contrib.contenttypes import generic
 from django.conf import settings
 from django.utils import timezone
 from django.dispatch import receiver
@@ -14,9 +15,7 @@ from greenmine.base.notifications.models import WatchedMixin
 import reversion
 
 
-class Task(models.Model, WatchedMixin):
-    uuid = models.CharField(max_length=40, unique=True, null=False, blank=True,
-                            verbose_name=_("uuid"))
+class Task(WatchedMixin):
     user_story = models.ForeignKey("userstories.UserStory", null=True, blank=True,
                 related_name="tasks", verbose_name=_("user story"))
     ref = models.BigIntegerField(db_index=True, null=True, blank=True, default=None,
@@ -27,11 +26,12 @@ class Task(models.Model, WatchedMixin):
                                related_name="tasks", verbose_name=_("status"))
     project = models.ForeignKey("projects.Project", null=False, blank=False,
                                 related_name="tasks", verbose_name=_("project"))
-    milestone = models.ForeignKey("milestones.Milestone", null=True, blank=True, default=None,
-                               related_name="tasks", verbose_name=_("milestone"))
+    milestone = models.ForeignKey("milestones.Milestone", null=True, blank=True,
+                                  default=None, related_name="tasks",
+                                  verbose_name=_("milestone"))
     created_date = models.DateTimeField(auto_now_add=True, null=False, blank=False,
                                         verbose_name=_("created date"))
-    modified_date = models.DateTimeField(auto_now_add=True, null=False, blank=False,
+    modified_date = models.DateTimeField(auto_now=True, null=False, blank=False,
                                          verbose_name=_("modified date"))
     finished_date = models.DateTimeField(null=True, blank=True,
                                          verbose_name=_("finished date"))
@@ -44,44 +44,42 @@ class Task(models.Model, WatchedMixin):
     watchers = models.ManyToManyField(settings.AUTH_USER_MODEL, null=True, blank=True,
                 related_name="watched_tasks", verbose_name=_("watchers"))
     tags = PickledObjectField(null=False, blank=True, verbose_name=_("tags"))
+    attachments = generic.GenericRelation("projects.Attachment")
     is_iocaine = models.BooleanField(default=False, null=False, blank=True,
                                      verbose_name=_("is iocaine"))
 
     notifiable_fields = [
-        "owner",
-        "status",
-        "finished_date",
         "subject",
-        "description",
+        "owner",
         "assigned_to",
-        "tags",
+        "finished_date",
         "is_iocaine",
+        "status",
+        "description",
+        "tags",
     ]
 
     class Meta:
-        verbose_name = u"task"
-        verbose_name_plural = u"tasks"
+        verbose_name = "task"
+        verbose_name_plural = "tasks"
         ordering = ["project", "created_date"]
         unique_together = ("ref", "project")
         permissions = (
-            ("comment_task", "Can comment tasks"),
-            ("change_owned_task", "Can modify owned tasks"),
-            ("change_assigned_task", "Can modify assigned tasks"),
-            ("assign_task_to_other", "Can assign tasks to others"),
-            ("assign_task_to_myself", "Can assign tasks to myself"),
-            ("change_task_state", "Can change the task state"),
-            ("view_task", "Can view the task"),
-            ("add_task_to_us", "Can add tasks to a user story"),
+            ("view_task", "Can view task"),
         )
 
     def __str__(self):
-        return u"({1}) {0}".format(self.ref, self.subject)
+        return "({1}) {0}".format(self.ref, self.subject)
 
-    def save(self, *args, **kwargs):
-        if self.id:
-            self.modified_date = timezone.now()
+    def get_notifiable_assigned_to_display(self, value):
+        if not value:
+            return _("Unassigned")
+        return value.get_full_name()
 
-        super(Task, self).save(*args, **kwargs)
+    def get_notifiable_tags_display(self, value):
+        if type(value) is list:
+            return ", ".join(value)
+        return value
 
     def _get_watchers_by_role(self):
         return {
@@ -109,41 +107,60 @@ def task_ref_handler(sender, instance, **kwargs):
 
 @receiver(models.signals.pre_save, sender=Task, dispatch_uid="tasks_close_handler")
 def tasks_close_handler(sender, instance, **kwargs):
+    # USs
     if instance.id:                                                             # Edit task
         if (sender.objects.get(id=instance.id).status.is_closed == False and
-                instance.status.is_closed == True):                             # Closed task
+                instance.status.is_closed == True):                             # Close task
             instance.finished_date = timezone.now()
             if instance.user_story and (all([task.status.is_closed for task in
-                    instance.user_story.tasks.exclude(id=instance.id)])):       # All us's tasks are close
-                us_closed_status = instance.project.us_statuses.filter(is_closed=True).order_by("order")[0]
+                    instance.user_story.tasks.exclude(id=instance.id)])):       # All close
+                us_closed_status = instance.project.us_statuses.filter(
+                                                         is_closed=True).order_by(
+                                                                           "order")[0]
                 instance.user_story.status = us_closed_status
                 instance.user_story.finish_date = timezone.now()
                 instance.user_story.save()
         elif (sender.objects.get(id=instance.id).status.is_closed == True and
-                instance.status.is_closed == False):                            # Opened task
+                instance.status.is_closed == False):                            # Opene task
             instance.finished_date = None
-            if instance.user_story and instance.user_story.status.is_closed == True:    # Us is close
-                us_opened_status = instance.project.us_statuses.filter(is_closed=False).order_by("-order")[0]
+            if instance.user_story and instance.user_story.status.is_closed == True: # Us close
+                us_opened_status = instance.project.us_statuses.filter(
+                                                        is_closed=False).order_by(
+                                                                          "-order")[0]
                 instance.user_story.status = us_opened_status
                 instance.user_story.finish_date = None
                 instance.user_story.save()
-    else:                                                                       # Create Task
-        if instance.status.is_closed == True:                                   # Task is close
+    else:                                                                      # Create Task
+        if instance.status.is_closed == True:                                # Task is close
             instance.finished_date = timezone.now()
             if instance.user_story:
                 if instance.user_story.status.is_closed == True: # Us is close
                     instance.user_story.finish_date = timezone.now()
                     instance.user_story.save()
-                elif all([task.status.is_closed for task in instance.user_story.tasks.all()]):  # All us's tasks are close
+                elif all([task.status.is_closed for task in
+                                                    instance.user_story.tasks.all()]):  # All us's tasks are close
                     # if any stupid robot/machine/user/alien create an open US
                     us_closed_status = instance.project.us_statuses.filter(is_closed=True).order_by("order")[0]
                     instance.user_story.status = us_closed_status
                     instance.user_story.finish_date = timezone.now()
                     instance.user_story.save()
-        else:                                                                   # Task is opene
+        else:                                                               # Task is opene
             instance.finished_date = None
             if instance.user_story and instance.user_story.status.is_closed == True: # US is close
-                us_opened_status = instance.project.us_statuses.filter(is_closed=False).order_by("-order")[0]
+                us_opened_status = instance.project.us_statuses.filter(
+                                                        is_closed=False).order_by(
+                                                                          "-order")[0]
                 instance.user_story.status = us_opened_status
                 instance.user_story.finish_date = None
                 instance.user_story.save()
+
+    # Milestone
+    if instance.milestone:
+        if (instance.status.is_closed and not instance.milestone.closed and
+                all([t.status.is_closed for t in instance.milestone.tasks.all()]) and
+                all([us.status.is_closed for us in instance.milestone.user_stories.all()])):
+            instance.milestone.closed = True
+            instance.milestone.save()
+        elif not instance.status.is_closed and instance.milestone.closed:
+            instance.milestone.closed = False
+            instance.milestone.save()

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from django.db import models
+from django.contrib.contenttypes import generic
 from django.conf import settings
 from django.utils import timezone
 from django.dispatch import receiver
@@ -14,9 +15,7 @@ from greenmine.base.notifications.models import WatchedMixin
 import reversion
 
 
-class Issue(models.Model, WatchedMixin):
-    uuid = models.CharField(max_length=40, unique=True, null=False, blank=True,
-                            verbose_name=_("uuid"))
+class Issue(WatchedMixin):
     ref = models.BigIntegerField(db_index=True, null=True, blank=True, default=None,
                                  verbose_name=_("ref"))
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, default=None,
@@ -36,7 +35,7 @@ class Issue(models.Model, WatchedMixin):
                                 related_name="issues", verbose_name=_("project"))
     created_date = models.DateTimeField(auto_now_add=True, null=False, blank=False,
                                         verbose_name=_("created date"))
-    modified_date = models.DateTimeField(auto_now_add=True, null=False, blank=False,
+    modified_date = models.DateTimeField(auto_now=True, null=False, blank=False,
                                          verbose_name=_("modified date"))
     finished_date = models.DateTimeField(null=True, blank=True,
                                          verbose_name=_("finished date"))
@@ -50,47 +49,47 @@ class Issue(models.Model, WatchedMixin):
                                       related_name="watched_issues",
                                       verbose_name=_("watchers"))
     tags = PickledObjectField(null=False, blank=True, verbose_name=_("tags"))
+    attachments = generic.GenericRelation("projects.Attachment")
 
     notifiable_fields = [
+         "subject",
+         "milestone",
          "owner",
+         "assigned_to",
+         "finished_date",
+         "type",
          "status",
          "severity",
          "priority",
-         "type",
-         "milestone",
-         "finished_date",
-         "subject",
-         "description",
-         "assigned_to",
          "tags",
+         "description",
     ]
 
     class Meta:
-        verbose_name = u"issue"
-        verbose_name_plural = u"issues"
+        verbose_name = "issue"
+        verbose_name_plural = "issues"
         ordering = ["project", "created_date"]
         unique_together = ("ref", "project")
         permissions = (
-            ("comment_issue", "Can comment issues"),
-            ("change_owned_issue", "Can modify owned issues"),
-            ("change_assigned_issue", "Can modify assigned issues"),
-            ("assign_issue_to_other", "Can assign issues to others"),
-            ("assign_issue_to_myself", "Can assign issues to myself"),
-            ("change_issue_state", "Can change the issue state"),
-            ("view_issue", "Can view the issue"),
+            ("view_issue", "Can view issue"),
         )
 
     def __str__(self):
-        return u"({1}) {0}".format(self.ref, self.subject)
-
-    def save(self, *args, **kwargs):
-        if self.id:
-            self.modified_date = timezone.now()
-        super(Issue, self).save(*args, **kwargs)
+        return "({1}) {0}".format(self.ref, self.subject)
 
     @property
     def is_closed(self):
         return self.status.is_closed
+
+    def get_notifiable_assigned_to_display(self, value):
+        if not value:
+            return _("Unassigned")
+        return value.get_full_name()
+
+    def get_notifiable_tags_display(self, value):
+        if type(value) is list:
+            return ", ".join(value)
+        return value
 
     def _get_watchers_by_role(self):
         return {
@@ -106,7 +105,19 @@ reversion.register(Issue)
 
 
 # Model related signals handlers
+@receiver(models.signals.pre_save, sender=Issue, dispatch_uid="issue_finished_date_handler")
+def issue_finished_date_handler(sender, instance, **kwargs):
+    if instance.status.is_closed and not instance.finished_date:
+        instance.finished_date = timezone.now()
+    elif not instance.status.is_closed and instance.finished_date:
+        instance.finished_date = None
+
 @receiver(models.signals.pre_save, sender=Issue, dispatch_uid="issue_ref_handler")
 def issue_ref_handler(sender, instance, **kwargs):
     if not instance.id and instance.project:
         instance.ref = ref_uniquely(instance.project, "last_issue_ref", instance.__class__)
+
+@receiver(models.signals.pre_save, sender=Issue, dispatch_uid="issue-tags-normalization")
+def issue_tags_normalization(sender, instance, **kwargs):
+    if isinstance(instance.tags, (list, tuple)):
+        instance.tags = list(map(lambda x: x.lower(), instance.tags))

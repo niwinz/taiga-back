@@ -1,9 +1,17 @@
-Updated fields by {{ changer }}:
+{% set final_url = resolve_front_url("issue", object.project.id, object.id) %}
+{% set final_url_name = "Greenmine - View issue #{0}".format(object.ref) %}
 
-{% for field in changed_fields_dict.values() %}
-    ** {{ field.verbose_name}}: from "{{ field.old_value}}" to "{{ field.new_value}}".
-{% endfor %}
+- Project: {{ object.project.name }}
+- Issue #{{ object.ref }}: {{ object.subject }}
+- Updated by {{ changer.get_full_name() }}
+{% if comment %}
+Comment: {{ comment|linebreaksbr }}
+{% endif %}
+{% if changed_fields %}
+- Updated fields:
+    {% for field in changed_fields %}
+    * {{ field.verbose_name}}</b>: from '{{ field.old_value}}' to '{{ field.new_value }}'.
+    {% endfor %}
+{% endif %}
 
-{# TODO Print the "object" details #}
-
-
+** More info at {{ final_url_name }} ({{ final_url }}) **

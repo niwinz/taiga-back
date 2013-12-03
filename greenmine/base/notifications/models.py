@@ -7,7 +7,7 @@ from django.utils.translation import ugettext_lazy as _
 import reversion
 
 
-class WatcherMixin(object):
+class WatcherMixin(models.Model):
     NOTIFY_LEVEL_CHOICES = (
         ("all_owned_projects", _(u"All events on my projects")),
         ("only_watching", _(u"Only events for objects i watch")),
@@ -20,7 +20,7 @@ class WatcherMixin(object):
                                     default="all_owned_projects",
                                     choices=NOTIFY_LEVEL_CHOICES,
                                     verbose_name=_(u"notify level"))
-    notify_changes_by_me = models.BooleanField(null=True, blank=True, default=False,
+    notify_changes_by_me = models.BooleanField(blank=True, default=False,
                                                verbose_name=_(u"notify changes by me"))
 
     class Meta:
@@ -54,7 +54,7 @@ class WatcherMixin(object):
         return (changer.pk != self.pk) or self.notify_changes_by_me
 
 
-class WatchedMixin(object):
+class WatchedMixin(models.Model):
     notifiable_fields = []
 
     class Meta:
@@ -65,17 +65,26 @@ class WatchedMixin(object):
         version_list = reversion.get_for_object(self)
         return version_list and version_list[0] or None
 
-    def get_changed_fields_dict(self, data_dict):
+    def get_changed_fields_list(self, data_dict):
+        def _key_by_notifiable_field(item):
+            try:
+                return self.notifiable_fields.index(item["name"])
+            except ValueError:
+                return 100000 # Emulate the maximum value
+
         if self.notifiable_fields:
-            changed_data = {k: v for k, v in data_dict.items()
+            changed_data = {k:v for k, v in data_dict.items()
                                     if k in self.notifiable_fields}
         else:
             changed_data = data_dict
 
-        field_dict = {}
-        for field_name, data_value in data_dict.items():
-            field_dict.update(self._get_changed_field(field_name, data_value))
-        return field_dict
+        fields_list = []
+        for field_name, data_value in changed_data.items():
+            field_dict = self._get_changed_field(field_name, data_value)
+            if field_dict["old_value"] != field_dict["new_value"]:
+                fields_list.append(field_dict)
+
+        return sorted(fields_list, key=_key_by_notifiable_field)
 
     def get_watchers_to_notify(self, changer):
         watchers_to_notify = set()
@@ -99,9 +108,9 @@ class WatchedMixin(object):
                     watchers_to_notify.add(suscribed_watcher)
 
         (project, project_owner) = watchers_by_role.get("project_owner", (None, None))
-        if project_owner \
-           and project_owner.allow_notify_project(project) \
-           and project_owner.allow_notify_by_me(self._changer):
+        if (project_owner
+                and project_owner.allow_notify_project(project)
+                and project_owner.allow_notify_by_me(changer)):
             watchers_to_notify.add(project_owner)
 
         if changer.notify_changes_by_me:
@@ -116,21 +125,39 @@ class WatchedMixin(object):
             return field_name
 
     def _get_changed_field_old_value(self, field_name, data_value):
-        return (self.last_version and self.last_version.field_dict.get(field_name, data_value) or None)
+        value = (self.last_version.field_dict.get(field_name, data_value)
+                    if self.last_version else None)
+        field = self.__class__._meta.get_field_by_name(field_name)[0] or None
+
+        if value and field:
+            # Get the old value from a ForeignKey
+            if type(field) is models.fields.related.ForeignKey:
+                try:
+                    value = field.related.parent_model.objects.get(pk=value)
+                except field.related.parent_model.DoesNotExist:
+                    pass
+
+        display_method = getattr(self,"get_notifiable_{field_name}_display".format(
+                                                              field_name=field_name) ,None)
+        return display_method(value) if display_method else value
 
     def _get_changed_field_new_value(self, field_name, data_value):
-        return getattr(self, field_name, data_value)
+        value = getattr(self, field_name, data_value)
+        display_method = getattr(self,"get_notifiable_{field_name}_display".format(
+                                                              field_name=field_name) ,None)
+        return display_method(value) if display_method else value
 
     def _get_changed_field(self, field_name, data_value):
         verbose_name = self._get_changed_field_verbose_name(field_name)
-        old_value = self._get_changed_field_old_value(field_name, data_value)
+        old_value = self._get_changed_field_old_value(field_name, None)
         new_value = self._get_changed_field_new_value(field_name, data_value)
 
-        return {field_name: {
+        return {
+            "name": field_name,
             "verbose_name": verbose_name,
             "old_value": old_value,
             "new_value": new_value,
-        }}
+        }
 
     def _get_watchers_by_role(self):
         """
@@ -144,4 +171,5 @@ class WatchedMixin(object):
                "project_owner": (self.project, self.project.owner),
            }
         """
-        raise NotImplementedError("You must subclass WatchedMixin and provide _get_watchers_by_role method")
+        raise NotImplementedError("You must subclass WatchedMixin and provide "
+                                  "_get_watchers_by_role method")

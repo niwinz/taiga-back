@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from django.db import models
+from django.contrib.contenttypes import generic
 from django.utils.translation import ugettext_lazy as _
 from django.conf import settings
 from django.utils import timezone
@@ -14,7 +15,7 @@ from picklefield.fields import PickledObjectField
 import reversion
 
 
-class Question(models.Model, WatchedMixin):
+class Question(WatchedMixin):
     ref = models.BigIntegerField(db_index=True, null=True, blank=True, default=None,
                                  verbose_name=_("ref"))
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, default=None,
@@ -24,8 +25,6 @@ class Question(models.Model, WatchedMixin):
     subject = models.CharField(max_length=250, null=False, blank=False,
                                verbose_name=_("subject"))
     content = models.TextField(null=False, blank=True, verbose_name=_("content"))
-    closed = models.BooleanField(default=False, null=False, blank=True,
-                                 verbose_name=_("closed"))
     project = models.ForeignKey("projects.Project", null=False, blank=False,
                                 related_name="questions", verbose_name=_("project"))
     milestone = models.ForeignKey("milestones.Milestone", null=True, blank=True,
@@ -38,12 +37,13 @@ class Question(models.Model, WatchedMixin):
                                     verbose_name=_("assigned_to"))
     created_date = models.DateTimeField(auto_now_add=True, null=False, blank=False,
                                         verbose_name=_("created date"))
-    modified_date = models.DateTimeField(auto_now_add=True, null=False, blank=False,
+    modified_date = models.DateTimeField(auto_now=True, null=False, blank=False,
                                          verbose_name=_("modified date"))
     watchers = models.ManyToManyField(settings.AUTH_USER_MODEL, null=True, blank=True,
                                       related_name="watched_questions",
                                       verbose_name=_("watchers"))
     tags = PickledObjectField(null=False, blank=True, verbose_name=_("tags"))
+    attachments = generic.GenericRelation("projects.Attachment")
 
     notifiable_fields = [
         "owner",
@@ -57,27 +57,16 @@ class Question(models.Model, WatchedMixin):
     ]
 
     class Meta:
-        verbose_name = u"question"
-        verbose_name_plural = u"questions"
-        ordering = ["project", "created_date", "subject"]
+        verbose_name = "question"
+        verbose_name_plural = "questions"
+        ordering = ["project", "created_date"]
         unique_together = ("ref", "project")
         permissions = (
-            ("reply_question", _(u"Can reply questions")),
-            ("change_owned_question", _(u"Can modify owned questions")),
-            ("change_assigned_question", _(u"Can modify assigned questions")),
-            ("assign_question_to_other", _(u"Can assign questions to others")),
-            ("assign_question_to_myself", _(u"Can assign questions to myself")),
-            ("change_question_state", _(u"Can change the question state")),
-            ("view_question", _(u"Can view the question")),
+            ("view_question", "Can view question"),
         )
 
     def __str__(self):
         return self.subject
-
-    def save(self, *args, **kwargs):
-        if self.id:
-            self.modified_date = timezone.now()
-        super(Question, self).save(*args, **kwargs)
 
     @property
     def is_closed(self):
@@ -97,8 +86,16 @@ reversion.register(Question)
 
 
 # Model related signals handlers
+@receiver(models.signals.pre_save, sender=Issue, dispatch_uid="question_finished_date_handler")
+def question_finished_date_handler(sender, instance, **kwargs):
+    if instance.status.is_closed and not instance.finished_date:
+        instance.finished_date = timezone.now()
+    elif not instance.status.is_closed and instance.finished_date:
+        instance.finished_date = None
 @receiver(models.signals.pre_save, sender=Question, dispatch_uid="question_ref_handler")
 def question_ref_handler(sender, instance, **kwargs):
     if not instance.id and instance.project:
         instance.ref = ref_uniquely(instance.project,"last_question_ref",
                                     instance.__class__)
+
+

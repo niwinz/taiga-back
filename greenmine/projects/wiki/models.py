@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 
 from django.db import models
+from django.contrib.contenttypes import generic
 from django.conf import settings
 from django.utils.translation import ugettext_lazy as _
+
+import reversion
 
 
 class WikiPage(models.Model):
@@ -21,17 +24,19 @@ class WikiPage(models.Model):
                                         verbose_name=_("created date"))
     modified_date = models.DateTimeField(auto_now=True, null=False, blank=False,
                                          verbose_name=_("modified date"))
+    attachments = generic.GenericRelation("projects.Attachment")
 
     class Meta:
         verbose_name = "wiki page"
         verbose_name_plural = "wiki pages"
         ordering = ["project", "slug"]
         unique_together = ("project", "slug",)
-
         permissions = (
-            ("view_wikipage", "Can modify owned wiki pages"),
-            ("change_owned_wikipage", "Can modify owned wiki pages"),
+            ("view_wikipage", "Can view wiki page"),
         )
 
     def __str__(self):
         return "project {0} - {1}".format(self.project_id, self.slug)
+
+
+reversion.register(WikiPage)

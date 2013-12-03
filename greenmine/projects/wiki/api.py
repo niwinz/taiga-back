@@ -26,7 +26,7 @@ class WikiAttachmentViewSet(ModelCrudViewSet):
 
     def get_queryset(self):
         ct = ContentType.objects.get_for_model(models.WikiPage)
-        qs = super(WikiAttachmentViewSet, self).get_queryset()
+        qs = super().get_queryset()
         qs = qs.filter(content_type=ct)
         return qs.distinct()
 
@@ -43,7 +43,7 @@ class WikiAttachmentViewSet(ModelCrudViewSet):
             obj.content_type = ContentType.objects.get_for_model(models.WikiPage)
             obj.owner = self.request.user
 
-        super(WikiAttachmentViewSet, self).pre_save(obj)
+        super().pre_save(obj)
 
 
 class WikiViewSet(ModelCrudViewSet):
@@ -52,6 +52,9 @@ class WikiViewSet(ModelCrudViewSet):
     permission_classes = (IsAuthenticated,)
     filter_backends = (filters.IsProjectMemberFilterBackend,)
     filter_fields = ["project", "slug"]
+
+    def get_historical_queryset(self):
+        return super().get_historical_queryset()[1:]
 
     def pre_conditions_on_save(self, obj):
         super().pre_conditions_on_save(obj)

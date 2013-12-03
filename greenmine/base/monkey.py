@@ -20,7 +20,7 @@ def patch_api_view():
                 return Response({'detail': 'Not authenticated'},
                                 status=status.HTTP_401_UNAUTHORIZED,
                                 exception=True)
-            return super(APIView, self).handle_exception(exc)
+            return super().handle_exception(exc)
 
         @classmethod
         def as_view(cls, **initkwargs):
@@ -59,3 +59,25 @@ def patch_serializer():
 
     serializers.BaseSerializer._patched = True
     serializers.BaseSerializer.to_native = to_native
+
+
+def patch_import_module():
+    from django.utils import importlib as django_importlib
+    import importlib
+
+    django_importlib.import_module = importlib.import_module
+
+
+def patch_south_hacks():
+    from south.hacks import django_1_0
+
+    orig_set_installed_apps = django_1_0.Hacks.set_installed_apps
+    def set_installed_apps(self, apps, preserve_models=True):
+        return orig_set_installed_apps(self, apps, preserve_models=preserve_models)
+
+    orig__redo_app_cache = django_1_0.Hacks._redo_app_cache
+    def _redo_app_cache(self, preserve_models=True):
+        return orig__redo_app_cache(self, preserve_models=preserve_models)
+
+    django_1_0.Hacks.set_installed_apps = set_installed_apps
+    django_1_0.Hacks._redo_app_cache = _redo_app_cache

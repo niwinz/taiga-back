@@ -1,8 +1,13 @@
 # -*- coding: utf-8 -*-
 
+import reversion
 from django.contrib.contenttypes.models import ContentType
 
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import list_route
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework import filters
 
 from greenmine.base import filters
 from greenmine.base import exceptions as exc
@@ -16,43 +21,49 @@ from . import models
 from . import permissions
 from . import serializers
 
-import reversion
+class IssuesFilter(filters.FilterBackend):
+    filter_fields = ( "status", "severity", "priority", "owner", "assigned_to", "tags")
 
+    def _prepare_filters_data(self, request):
+        data = {}
+        for filtername in self.filter_fields:
+            if filtername not in request.QUERY_PARAMS:
+                continue
 
-class IssueAttachmentViewSet(ModelCrudViewSet):
-    model = Attachment
-    serializer_class = AttachmentSerializer
-    permission_classes = (IsAuthenticated, AttachmentPermission)
-    filter_backends = (filters.IsProjectMemberFilterBackend,)
-    filter_fields = ["project", "object_id"]
+            raw_value = request.QUERY_PARAMS[filtername]
+            values = (x.strip() for x in raw_value.split(","))
 
-    def get_queryset(self):
-        ct = ContentType.objects.get_for_model(models.Issue)
-        qs = super(IssueAttachmentViewSet, self).get_queryset()
-        qs = qs.filter(content_type=ct)
-        return qs.distinct()
+            if filtername != "tags":
+                values = map(int, values)
 
-    def pre_save(self, obj):
-        if not obj.id:
-            obj.content_type = ContentType.objects.get_for_model(models.Issue)
-            obj.owner = self.request.user
-        super(IssueAttachmentViewSet, self).pre_save(obj)
+            data[filtername] = list(values)
+        return data
 
-    def pre_conditions_on_save(self, obj):
-        super().pre_conditions_on_save(obj)
+    def filter_queryset(self, request, queryset, view):
+        filterdata = self._prepare_filters_data(request)
 
-        if (obj.project.owner != self.request.user and
-                obj.project.memberships.filter(user=self.request.user).count() == 0):
-            raise exc.PreconditionError("You must not add a new issue attachment "
-                                        "to this project.")
+        if "tags" in filterdata:
+            where_sql = ["unpickle(issues_issue.tags) @> %s"]
+            params = [filterdata["tags"]]
+            queryset = queryset.extra(where=where_sql, params=params)
+
+        for name, value in filter(lambda x: x[0] != "tags", filterdata.items()):
+            qs_kwargs = {"{0}_id__in".format(name): value}
+            queryset = queryset.filter(**qs_kwargs)
+
+        return queryset
 
 
 class IssueViewSet(NotificationSenderMixin, ModelCrudViewSet):
     model = models.Issue
     serializer_class = serializers.IssueSerializer
     permission_classes = (IsAuthenticated, permissions.IssuePermission)
-    filter_backends = (filters.IsProjectMemberFilterBackend,)
+
+    filter_backends = (filters.IsProjectMemberFilterBackend, IssuesFilter)
     filter_fields = ("project",)
+    order_by_fields = ("severity", "status", "priority", "created_date", "modified_date", "owner",
+                       "assigned_to")
+
     create_notification_template = "create_issue_notification"
     update_notification_template = "update_issue_notification"
     destroy_notification_template = "destroy_issue_notification"
@@ -60,7 +71,7 @@ class IssueViewSet(NotificationSenderMixin, ModelCrudViewSet):
     def pre_save(self, obj):
         if not obj.id:
             obj.owner = self.request.user
-        super(IssueViewSet, self).pre_save(obj)
+        super().pre_save(obj)
 
     def pre_conditions_on_save(self, obj):
         super().pre_conditions_on_save(obj)
@@ -89,4 +100,32 @@ class IssueViewSet(NotificationSenderMixin, ModelCrudViewSet):
             if "comment" in self.request.DATA:
                 # Update the comment in the last version
                 reversion.set_comment(self.request.DATA["comment"])
-        super(IssueViewSet, self).post_save(obj, created)
+        super().post_save(obj, created)
+
+
+class IssueAttachmentViewSet(ModelCrudViewSet):
+    model = Attachment
+    serializer_class = AttachmentSerializer
+    permission_classes = (IsAuthenticated, AttachmentPermission)
+    filter_backends = (filters.IsProjectMemberFilterBackend,)
+    filter_fields = ["project", "object_id"]
+
+    def get_queryset(self):
+        ct = ContentType.objects.get_for_model(models.Issue)
+        qs = super().get_queryset()
+        qs = qs.filter(content_type=ct)
+        return qs.distinct()
+
+    def pre_save(self, obj):
+        if not obj.id:
+            obj.content_type = ContentType.objects.get_for_model(models.Issue)
+            obj.owner = self.request.user
+        super().pre_save(obj)
+
+    def pre_conditions_on_save(self, obj):
+        super().pre_conditions_on_save(obj)
+
+        if (obj.project.owner != self.request.user and
+                obj.project.memberships.filter(user=self.request.user).count() == 0):
+            raise exc.PreconditionError("You must not add a new issue attachment "
+                                        "to this project.")

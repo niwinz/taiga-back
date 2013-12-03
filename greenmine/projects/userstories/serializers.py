@@ -24,7 +24,6 @@ class UserStorySerializer(serializers.ModelSerializer):
     points = RolePointsField(source="role_points", required=False )
     total_points = serializers.SerializerMethodField("get_total_points")
     comment = serializers.SerializerMethodField("get_comment")
-    history = serializers.SerializerMethodField("get_history")
 
     class Meta:
         model = models.UserStory
@@ -32,62 +31,20 @@ class UserStorySerializer(serializers.ModelSerializer):
 
     def save_object(self, obj, **kwargs):
         role_points = obj._related_data.pop("role_points", None)
-        super(UserStorySerializer, self).save_object(obj, **kwargs)
+        super().save_object(obj, **kwargs)
 
         points_modelcls = get_model("projects", "Points")
 
         obj.project.update_role_points()
         if role_points:
-            for role_id, points_order in role_points.items():
+            for role_id, points_id in role_points.items():
                 role_points = obj.role_points.get(role__id=role_id)
-                role_points.points = points_modelcls.objects.get(project=obj.project,
-                                                                 order=points_order)
+                role_points.points = points_modelcls.objects.get(id=points_id,
+                                                                 project=obj.project)
                 role_points.save()
 
     def get_total_points(self, obj):
         return obj.get_total_points()
 
     def get_comment(self, obj):
-        version_list = reversion.get_for_object(obj)
-        if len(version_list) > 0:
-            return version_list[0].revision.comment
-        else:
-            return None
-
-    def get_user_stories_diff(self, old_us_version, new_us_version):
-        old_obj = old_us_version.field_dict
-        new_obj = new_us_version.field_dict
-
-        diff_dict = {
-            "modified_date": new_obj["modified_date"],
-            "by": new_us_version.revision.user,
-            "comment": new_us_version.revision.comment,
-        }
-
-        for key in old_obj.keys():
-            if key == "modified_date":
-                continue
-
-            if old_obj[key] == new_obj[key]:
-                continue
-
-            diff_dict[key] = {
-                "old": old_obj[key],
-                "new": new_obj[key],
-            }
-
-        return diff_dict
-
-    def get_history(self, obj):
-        diff_list = []
-        current = None
-
-        if obj:
-            for version in reversed(list(reversion.get_for_object(obj))):
-                if current:
-                    us_diff = self.get_user_stories_diff(current, version)
-                    diff_list.append(us_diff)
-
-                current = version
-
-        return diff_list
+        return ""
