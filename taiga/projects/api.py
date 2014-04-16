@@ -19,7 +19,7 @@ from taiga.base import exceptions as exc
 from taiga.base.decorators import list_route, detail_route
 from taiga.base.permissions import has_project_perm
 from taiga.base.api import ModelCrudViewSet, ModelListViewSet, RetrieveModelMixin
-from taiga.base.users.models import Role
+from taiga.users.models import Role
 from taiga.base.notifications.api import NotificationSenderMixin
 from taiga.projects.aggregates.tags import get_all_tags
 

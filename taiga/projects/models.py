@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import itertools
-import collections
 import time
 
 from django.core.exceptions import ValidationError
@@ -19,15 +18,15 @@ from django.utils import timezone
 from picklefield.fields import PickledObjectField
 import reversion
 
+from taiga.users.models import Role
 from taiga.domains.models import DomainMember
 from taiga.projects.userstories.models import UserStory
 from taiga.base.utils.slug import slugify_uniquely
 from taiga.base.utils.dicts import dict_sum
-from taiga.base.users.models import Role
 
 from . import choices
 
-
+# FIXME: this should to be on choices module (?)
 VIDEOCONFERENCES_CHOICES = (
     ('appear-in', 'AppearIn'),
     ('talky', 'Talky'),
@@ -100,6 +99,7 @@ class ProjectDefaults(models.Model):
                                                    related_name="+", null=True, blank=True,
                                                    verbose_name=_("default questions "
                                                                   "status"))
+
     class Meta:
         abstract = True
 
@@ -138,14 +138,14 @@ class Project(ProjectDefaults, models.Model):
     is_kanban_activated = models.BooleanField(default=False, null=False, blank=True,
                                               verbose_name=_("active kanban panel"))
     is_wiki_activated = models.BooleanField(default=True, null=False, blank=True,
-                                              verbose_name=_("active wiki panel"))
+                                            verbose_name=_("active wiki panel"))
     is_issues_activated = models.BooleanField(default=True, null=False, blank=True,
                                               verbose_name=_("active issues panel"))
     videoconferences = models.CharField(max_length=250, null=True, blank=True,
                                         choices=VIDEOCONFERENCES_CHOICES,
                                         verbose_name=_("videoconference system"))
     videoconferences_salt = models.CharField(max_length=250, null=True, blank=True,
-                                        verbose_name=_("videoconference room salt"))
+                                             verbose_name=_("videoconference room salt"))
 
     domain = models.ForeignKey("domains.Domain", related_name="projects", null=True, blank=True,
                                default=None, verbose_name=_("domain"))
@@ -607,7 +607,7 @@ def project_post_save(sender, instance, created, **kwargs):
             instance.default_question_status = obj
 
     # Permissions
-    for order, slug, name, computable, permissions  in choices.ROLES:
+    for order, slug, name, computable, permissions in choices.ROLES:
         obj = Role.objects.create(slug=slug, name=name, order=order, computable=computable, project=instance)
         for permission in permissions:
             try:
