@@ -169,6 +169,7 @@ INSTALLED_APPS = [
     "taiga.projects.userstories",
     "taiga.projects.tasks",
     "taiga.projects.issues",
+    "taiga.projects.history",
     "taiga.front",
     #"taiga.projects.questions",
     #"taiga.projects.documents",
