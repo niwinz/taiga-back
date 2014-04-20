@@ -6,7 +6,7 @@ Django==1.6.2
 South==0.8.3
 django-filter==0.7
 django-picklefield==0.3.0
-django-sampledatahelper==0.2.1
+#django-sampledatahelper==0.2.1
 gunicorn>=17.5
 psycopg2==2.5.2
 pytz>=2013.9
